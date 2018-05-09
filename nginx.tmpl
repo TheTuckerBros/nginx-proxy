@@ -91,8 +91,9 @@ server {
 }
 {{ end }}
 
-{{ range $host, $containers := groupByMulti $ "Env.VIRTUAL_HOST" "," }}
+{{ range $host, $containers := groupByMulti $ "Env.VIRTUAL_SERVER_NAME" "," }}
 {{ $upstream_name := sha1 $host }}
+
 # {{ $host }}
 upstream {{ $upstream_name }} {
 {{ range $container := $containers }}
@@ -119,6 +120,7 @@ upstream {{ $upstream_name }} {
 {{ end }}
 }
 
+{{ $location := "/"}}
 {{ $default_host := or ($.Env.DEFAULT_HOST) "" }}
 {{ $default_server := index (dict $host "" $default_host "default_server") $host }}
 
@@ -184,12 +186,22 @@ server {
 	include /etc/nginx/vhost.d/default;
 	{{ end }}
 
-	location / {
+	{{ range $opt, $containers := groupByMulti $ "Env.VIRTUAL_HOST" "," }}
+	{{ $parts := split $opt "=>" }}
+	{{ $host_location := first $parts | trim }}
+	{{ $server_name := last $parts | trim }}
+
+	{{ $host_parts := split $host_location "|" }}
+	{{ $host2 := first $host_parts | trim }}
+	{{ $location := last $host_parts | trim }}
+
+  {{ if (eq $host $host2) }}
+	location {{ $location }} {
 		{{ if eq $proto "uwsgi" }}
 		include uwsgi_params;
-		uwsgi_pass {{ trim $proto }}://{{ trim $upstream_name }};
+		uwsgi_pass {{ trim $proto }}://{{ sha1 $server_name }};
 		{{ else }}
-		proxy_pass {{ trim $proto }}://{{ trim $upstream_name }};
+		proxy_pass {{ trim $proto }}://{{ sha1 $server_name }};
 		{{ end }}
 		{{ if (exists (printf "/etc/nginx/htpasswd/%s" $host)) }}
 		auth_basic	"Restricted {{ $host }}";
@@ -201,6 +213,8 @@ server {
                 include /etc/nginx/vhost.d/default_location;
                 {{ end }}
 	}
+	{{ end }}
+	{{ end }}
 }
 
 {{ end }}
@@ -218,12 +232,23 @@ server {
 	include /etc/nginx/vhost.d/default;
 	{{ end }}
 
-	location / {
+	{{ range $opt, $containers := groupByMulti $ "Env.VIRTUAL_HOST" "," }}
+	{{ $parts := split $opt "=>" }}
+	{{ $host_location := first $parts | trim }}
+	{{ $server_name := last $parts | trim }}
+
+	{{ $host_parts := split $host_location "|"}}
+	{{ $host2 := first $host_parts | trim }}
+	{{ $location := last $host_parts | trim }}
+
+	# {{ $host }} - {{ $host2 }}/{{ $host_location }}=>{{ $server_name }} V1
+	{{ if (eq $host $host2) }}
+	location {{ $location }} {
 		{{ if eq $proto "uwsgi" }}
 		include uwsgi_params;
-		uwsgi_pass {{ trim $proto }}://{{ trim $upstream_name }};
+		uwsgi_pass {{ trim $proto }}://{{ sha1 $server_name }};
 		{{ else }}
-		proxy_pass {{ trim $proto }}://{{ trim $upstream_name }};
+		proxy_pass {{ trim $proto }}://{{ sha1 $server_name }};
 		{{ end }}
 		{{ if (exists (printf "/etc/nginx/htpasswd/%s" $host)) }}
 		auth_basic	"Restricted {{ $host }}";
@@ -235,6 +260,8 @@ server {
                 include /etc/nginx/vhost.d/default_location;
                 {{ end }}
 	}
+	{{ end }}
+	{{ end }}
 }
 
 {{ if (and (not $is_https) (exists "/etc/nginx/certs/default.crt") (exists "/etc/nginx/certs/default.key")) }}
